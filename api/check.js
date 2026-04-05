@@ -1,4 +1,9 @@
-const { kv } = require('@vercel/kv');
+const { Redis } = require('@upstash/redis');
+
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7,19 +12,19 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { key, machine_id, version } = req.body || {};
+  const { key, machine_id } = req.body || {};
   if (!key || !machine_id) {
     return res.status(400).json({ valid: false, message: 'Thieu key hoac machine_id' });
   }
 
   try {
-    const keyData = await kv.get('license:' + key);
-    if (!keyData) {
-      return res.json({ valid: false, message: 'Key khong ton tai' });
-    }
+    const raw = await redis.get('license:' + key);
+    if (!raw) return res.json({ valid: false, message: 'Key khong ton tai' });
 
+    const keyData = typeof raw === 'string' ? JSON.parse(raw) : raw;
     const now = new Date();
     const expire = new Date(keyData.expire);
+
     if (now > expire) {
       return res.json({ valid: false, message: 'Key da het han (' + keyData.expire + ')' });
     }
@@ -32,13 +37,13 @@ module.exports = async function handler(req, res) {
       }
       machines.push(machine_id);
       keyData.machines = machines;
-      await kv.set('license:' + key, keyData);
+      await redis.set('license:' + key, JSON.stringify(keyData));
     }
 
-    const daysLeft = Math.ceil((expire - now) / (1000 * 60 * 60 * 24));
+    const daysLeft = Math.ceil((expire - now) / 86400000);
     return res.json({ valid: true, message: 'OK', expire: keyData.expire, days_left: daysLeft });
   } catch (error) {
-    console.error('License check error:', error);
+    console.error('Error:', error);
     return res.status(500).json({ valid: false, message: 'Server error' });
   }
 };
