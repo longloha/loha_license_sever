@@ -13,10 +13,10 @@ module.exports = async function handler(req, res) {
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + ADMIN_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { key, expire, max_machines } = req.body || {};
+  const { key, expire, phone } = req.body || {};
   if (!key || !expire) return res.status(400).json({ error: 'Thieu key hoac expire' });
 
-  const keyData = { key, expire, max_machines: max_machines || 1, machines: [], created_at: new Date().toISOString() };
+  const keyData = { key, expire, phone: phone || '', created_at: new Date().toISOString() };
   await redis.set('license:' + key, JSON.stringify(keyData));
   return res.json({ success: true, key: keyData });
 };

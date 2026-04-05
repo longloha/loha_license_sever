@@ -12,9 +12,9 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { key, machine_id } = req.body || {};
-  if (!key || !machine_id) {
-    return res.status(400).json({ valid: false, message: 'Thieu key hoac machine_id' });
+  const { key } = req.body || {};
+  if (!key) {
+    return res.status(400).json({ valid: false, message: 'Thieu key' });
   }
 
   try {
@@ -29,19 +29,8 @@ module.exports = async function handler(req, res) {
       return res.json({ valid: false, message: 'Key da het han (' + keyData.expire + ')' });
     }
 
-    const maxMachines = keyData.max_machines || 1;
-    let machines = keyData.machines || [];
-    if (!machines.includes(machine_id)) {
-      if (machines.length >= maxMachines) {
-        return res.json({ valid: false, message: 'Key da dung tren ' + maxMachines + ' may khac' });
-      }
-      machines.push(machine_id);
-      keyData.machines = machines;
-      await redis.set('license:' + key, JSON.stringify(keyData));
-    }
-
     const daysLeft = Math.ceil((expire - now) / 86400000);
-    return res.json({ valid: true, message: 'OK', expire: keyData.expire, days_left: daysLeft });
+    return res.json({ valid: true, message: 'OK', expire: keyData.expire, days_left: daysLeft, phone: keyData.phone || '' });
   } catch (error) {
     console.error('Error:', error);
     return res.status(500).json({ valid: false, message: 'Server error' });
