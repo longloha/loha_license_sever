@@ -12,7 +12,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { key } = req.body || {};
+  const { key, device_id } = req.body || {};
   if (!key) {
     return res.status(400).json({ valid: false, message: 'Thieu key' });
   }
@@ -27,6 +27,23 @@ module.exports = async function handler(req, res) {
 
     if (now > expire) {
       return res.json({ valid: false, message: 'Key da het han (' + keyData.expire + ')' });
+    }
+
+    // Device binding: 1 key = 1 device
+    if (device_id) {
+      if (!keyData.device_id) {
+        // First activation: bind this device
+        keyData.device_id = device_id;
+        keyData.last_seen = now.toISOString();
+        await redis.set('license:' + key, JSON.stringify(keyData));
+      } else if (keyData.device_id !== device_id) {
+        // Different device: reject
+        return res.json({ valid: false, message: 'Key da duoc kich hoat tren may khac' });
+      } else {
+        // Same device: update last_seen
+        keyData.last_seen = now.toISOString();
+        await redis.set('license:' + key, JSON.stringify(keyData));
+      }
     }
 
     const daysLeft = Math.ceil((expire - now) / 86400000);
