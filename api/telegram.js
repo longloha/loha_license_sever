@@ -3,129 +3,125 @@ const https = require('https');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(id => id.trim());
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'loha-admin-secret';
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-function sendMessage(chatId, text, parseMode = 'HTML') {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode });
-    const req = https.request({
+function sendTg(chatId, text) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
+    const options = {
       hostname: 'api.telegram.org',
-      path: `/bot${BOT_TOKEN}/sendMessage`,
+      port: 443,
+      path: '/bot' + BOT_TOKEN + '/sendMessage',
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
+    };
+    const req = https.request(options, (r) => {
+      let d = '';
+      r.on('data', (c) => { d += c; });
+      r.on('end', () => { resolve(d); });
     });
-    req.on('error', reject);
+    req.on('error', (e) => { console.error('sendTg error:', e); resolve(''); });
     req.write(payload);
     req.end();
   });
 }
 
-function generateKey(phone) {
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const rand2 = Math.random().toString(36).substring(2, 7).toUpperCase();
-  return `LOHA-${phone}-${rand}-${rand2}`;
+function genKey(phone) {
+  const r1 = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const r2 = Math.random().toString(36).substring(2, 7).toUpperCase();
+  return 'LOHA-' + phone + '-' + r1 + '-' + r2;
 }
 
-function parseFeatures(input) {
+function parseFeats(input) {
   if (!input || input === 'all') return ['veo3', 'grok', 'sora'];
-  return input.toLowerCase().split(',').map(f => f.trim()).filter(f => f);
+  return input.toLowerCase().split(',').map(function(f) { return f.trim(); }).filter(function(f) { return f; });
 }
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).send('OK');
 
+  var body = req.body || {};
+  var message = body.message;
+  if (!message || !message.text) return res.status(200).send('OK');
+
+  var chatId = message.chat.id;
+  var userId = String(message.from.id);
+  var text = (message.text || '').trim();
+
+  // Auth
+  if (!ADMIN_IDS.includes(userId)) {
+    await sendTg(chatId, '⛔ Ban khong co quyen su dung bot nay.');
+    return res.status(200).send('OK');
+  }
+
   try {
-    const { message } = req.body || {};
-    if (!message || !message.text) return res.status(200).send('OK');
-
-    const chatId = message.chat.id;
-    const userId = String(message.from.id);
-    const text = message.text.trim();
-
-    // Auth check
-    if (!ADMIN_IDS.includes(userId)) {
-      await sendMessage(chatId, '⛔ Bạn không có quyền sử dụng bot này.');
-      return res.status(200).send('OK');
-    }
-
     // /start
     if (text === '/start') {
-      await sendMessage(chatId,
+      await sendTg(chatId,
         '🔑 <b>Loha License Bot</b>\n\n' +
-        '📌 Tạo key:\n<code>/key [phone] [days] [features]</code>\n' +
+        '📌 Tao key:\n<code>/key [phone] [days] [features]</code>\n' +
         'VD: <code>/key 0868463198 30 veo3</code>\n' +
         'VD: <code>/key 0868463198 30 veo3,grok</code>\n' +
         'VD: <code>/key 0868463198 30 all</code>\n\n' +
-        '📋 Xem keys:\n<code>/list</code> hoặc <code>/list 0868463198</code>\n\n' +
-        '🗑 Xoá key:\n<code>/delete LOHA-xxx</code>\n\n' +
-        '🔄 Reset device:\n<code>/reset LOHA-xxx</code>'
+        '📋 Xem keys: <code>/list</code> hoac <code>/list 0868463198</code>\n' +
+        '🗑 Xoa key: <code>/delete LOHA-xxx</code>\n' +
+        '🔄 Reset device: <code>/reset LOHA-xxx</code>'
       );
       return res.status(200).send('OK');
     }
 
     // /key [phone] [days] [features]
     if (text.startsWith('/key')) {
-      const parts = text.split(/\s+/);
+      var parts = text.split(/\s+/);
       if (parts.length < 3) {
-        await sendMessage(chatId, '❌ Sai cú pháp!\n<code>/key [phone] [days] [features]</code>\nVD: <code>/key 0868463198 30 veo3</code>');
+        await sendTg(chatId, '❌ Sai cu phap!\n<code>/key [phone] [days] [features]</code>\nVD: <code>/key 0868463198 30 veo3</code>');
         return res.status(200).send('OK');
       }
 
-      const phone = parts[1];
-      const days = parseInt(parts[2]) || 30;
-      const featuresInput = parts[3] || 'veo3';
-      const features = parseFeatures(featuresInput);
+      var phone = parts[1];
+      var days = parseInt(parts[2]) || 30;
+      var featInput = parts[3] || 'veo3';
+      var features = parseFeats(featInput);
 
-      await sendMessage(chatId, `⏳ Đang tạo key cho ${phone} (${days} ngày) — ${features.join(', ')}...`);
+      await sendTg(chatId, '⏳ Dang tao key cho ' + phone + ' (' + days + ' ngay) — ' + features.join(', ') + '...');
 
-      const key = generateKey(phone);
-      const expire = new Date();
+      var key = genKey(phone);
+      var expire = new Date();
       expire.setDate(expire.getDate() + days);
-      const expireStr = expire.toISOString().split('T')[0];
-      const expireDisplay = expire.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: '2-digit' });
+      var expireStr = expire.toISOString().split('T')[0];
+      var expireDisplay = expire.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: '2-digit' });
 
-      const keyData = {
-        key,
-        expire: expireStr,
-        phone,
-        features,
-        created_at: new Date().toISOString(),
-      };
+      var keyData = { key: key, expire: expireStr, phone: phone, features: features, created_at: new Date().toISOString() };
       await redis.set('license:' + key, JSON.stringify(keyData));
 
-      const featDisplay = features.map(f => f.charAt(0).toUpperCase() + f.slice(1)).join(', ');
+      var featDisplay = features.map(function(f) { return f.charAt(0).toUpperCase() + f.slice(1); }).join(', ');
 
-      await sendMessage(chatId,
-        '✅ Key đã tạo:\n\n' +
-        `<code>${key}</code>\n\n` +
-        `📞 SĐT: ${phone}\n` +
-        `📅 Hết hạn: ${expireDisplay}\n` +
-        `🔧 Models: ${featDisplay}`
+      await sendTg(chatId,
+        '✅ Key da tao:\n\n' +
+        '<code>' + key + '</code>\n\n' +
+        '📞 SDT: ' + phone + '\n' +
+        '📅 Het han: ' + expireDisplay + '\n' +
+        '🔧 Models: ' + featDisplay
       );
       return res.status(200).send('OK');
     }
 
     // /list or /list [phone]
     if (text.startsWith('/list')) {
-      const searchPhone = text.split(/\s+/)[1] || '';
-      const keys = [];
-      let cursor = '0';
+      var searchPhone = (text.split(/\s+/)[1]) || '';
+      var keys = [];
+      var cursor = '0';
 
       do {
-        const result = await redis.scan(cursor, { match: 'license:*', count: 100 });
+        var result = await redis.scan(cursor, { match: 'license:*', count: 100 });
         cursor = String(result[0]);
-        for (const k of result[1]) {
-          const raw = await redis.get(k);
-          const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        for (var i = 0; i < result[1].length; i++) {
+          var raw = await redis.get(result[1][i]);
+          var data = typeof raw === 'string' ? JSON.parse(raw) : raw;
           if (data && data.key) {
             if (!searchPhone || (data.phone && data.phone.includes(searchPhone))) {
               keys.push(data);
@@ -135,75 +131,72 @@ module.exports = async function handler(req, res) {
       } while (cursor !== '0');
 
       if (keys.length === 0) {
-        await sendMessage(chatId, searchPhone ? `Không tìm thấy key cho SĐT ${searchPhone}` : 'Chưa có key nào.');
+        await sendTg(chatId, searchPhone ? 'Khong tim thay key cho SDT ' + searchPhone : 'Chua co key nao.');
         return res.status(200).send('OK');
       }
 
-      // Sort by created_at desc
-      keys.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      keys.sort(function(a, b) { return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
 
-      let msg = `📋 <b>${keys.length} key(s)</b>${searchPhone ? ' cho ' + searchPhone : ''}:\n\n`;
-      for (const k of keys.slice(0, 20)) {
-        const now = new Date();
-        const exp = new Date(k.expire);
-        const status = now > exp ? '🔴' : '🟢';
-        const feats = Array.isArray(k.features) ? k.features.join(',') : 'veo3';
-        const device = k.device_id ? '📱' : '—';
-        msg += `${status} <code>${k.key}</code>\n   📞${k.phone || '-'} | ${feats} | ${k.expire} ${device}\n`;
+      var msg = '📋 <b>' + keys.length + ' key(s)</b>' + (searchPhone ? ' cho ' + searchPhone : '') + ':\n\n';
+      var show = keys.slice(0, 20);
+      for (var i = 0; i < show.length; i++) {
+        var k = show[i];
+        var now = new Date();
+        var exp = new Date(k.expire);
+        var status = now > exp ? '🔴' : '🟢';
+        var feats = Array.isArray(k.features) ? k.features.join(',') : 'veo3';
+        var device = k.device_id ? '📱' : '—';
+        msg += status + ' <code>' + k.key + '</code>\n   📞' + (k.phone || '-') + ' | ' + feats + ' | ' + k.expire + ' ' + device + '\n';
       }
-      if (keys.length > 20) msg += `\n... và ${keys.length - 20} key nữa`;
+      if (keys.length > 20) msg += '\n... va ' + (keys.length - 20) + ' key nua';
 
-      await sendMessage(chatId, msg);
+      await sendTg(chatId, msg);
       return res.status(200).send('OK');
     }
 
     // /delete [key]
     if (text.startsWith('/delete')) {
-      const keyToDelete = text.split(/\s+/)[1];
-      if (!keyToDelete) {
-        await sendMessage(chatId, '❌ <code>/delete LOHA-xxx</code>');
+      var keyToDel = (text.split(/\s+/)[1]) || '';
+      if (!keyToDel) {
+        await sendTg(chatId, '❌ <code>/delete LOHA-xxx</code>');
         return res.status(200).send('OK');
       }
-
-      const existing = await redis.get('license:' + keyToDelete);
+      var existing = await redis.get('license:' + keyToDel);
       if (!existing) {
-        await sendMessage(chatId, `❌ Key không tồn tại: ${keyToDelete}`);
+        await sendTg(chatId, '❌ Key khong ton tai: ' + keyToDel);
         return res.status(200).send('OK');
       }
-
-      await redis.del('license:' + keyToDelete);
-      await sendMessage(chatId, `🗑 Đã xoá key: <code>${keyToDelete}</code>`);
+      await redis.del('license:' + keyToDel);
+      await sendTg(chatId, '🗑 Da xoa key: <code>' + keyToDel + '</code>');
       return res.status(200).send('OK');
     }
 
     // /reset [key]
     if (text.startsWith('/reset')) {
-      const keyToReset = text.split(/\s+/)[1];
+      var keyToReset = (text.split(/\s+/)[1]) || '';
       if (!keyToReset) {
-        await sendMessage(chatId, '❌ <code>/reset LOHA-xxx</code>');
+        await sendTg(chatId, '❌ <code>/reset LOHA-xxx</code>');
         return res.status(200).send('OK');
       }
-
-      const raw = await redis.get('license:' + keyToReset);
-      if (!raw) {
-        await sendMessage(chatId, `❌ Key không tồn tại: ${keyToReset}`);
+      var raw2 = await redis.get('license:' + keyToReset);
+      if (!raw2) {
+        await sendTg(chatId, '❌ Key khong ton tai: ' + keyToReset);
         return res.status(200).send('OK');
       }
-
-      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      delete data.device_id;
-      delete data.last_seen;
-      await redis.set('license:' + keyToReset, JSON.stringify(data));
-      await sendMessage(chatId, `🔄 Đã reset device cho: <code>${keyToReset}</code>`);
+      var data2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
+      delete data2.device_id;
+      delete data2.last_seen;
+      await redis.set('license:' + keyToReset, JSON.stringify(data2));
+      await sendTg(chatId, '🔄 Da reset device cho: <code>' + keyToReset + '</code>');
       return res.status(200).send('OK');
     }
 
-    // Unknown command
-    await sendMessage(chatId, '❓ Lệnh không hợp lệ. Gõ /start để xem hướng dẫn.');
+    await sendTg(chatId, '❓ Lenh khong hop le. Go /start de xem huong dan.');
     return res.status(200).send('OK');
 
-  } catch (error) {
-    console.error('Telegram bot error:', error);
+  } catch (err) {
+    console.error('Bot error:', err);
+    await sendTg(chatId, '❌ Loi server: ' + (err.message || err));
     return res.status(200).send('OK');
   }
 };
