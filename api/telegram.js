@@ -1,4 +1,5 @@
 const { Redis } = require('@upstash/redis');
+const https = require('https');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(id => id.trim());
@@ -9,13 +10,22 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-
-async function sendMessage(chatId, text, parseMode = 'HTML') {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode }),
+function sendMessage(chatId, text, parseMode = 'HTML') {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode });
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${BOT_TOKEN}/sendMessage`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
   });
 }
 
