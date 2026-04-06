@@ -1,33 +1,27 @@
 const { Redis } = require('@upstash/redis');
-const https = require('https');
+const fetch = require('node-fetch');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(id => id.trim());
+const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(function(id) { return id.trim(); });
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-function sendTg(chatId, text) {
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-    const options = {
-      hostname: 'api.telegram.org',
-      port: 443,
-      path: '/bot' + BOT_TOKEN + '/sendMessage',
+async function sendTg(chatId, text) {
+  try {
+    var resp = await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
-    };
-    const req = https.request(options, (r) => {
-      let d = '';
-      r.on('data', (c) => { d += c; });
-      r.on('end', () => { resolve(d); });
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'HTML' }),
     });
-    req.on('error', (e) => { console.error('sendTg error:', e); resolve(''); });
-    req.write(payload);
-    req.end();
-  });
+    var data = await resp.json();
+    return data;
+  } catch (e) {
+    console.error('sendTg error:', e);
+    return null;
+  }
 }
 
 function genKey(phone) {
