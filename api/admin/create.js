@@ -8,15 +8,30 @@ const redis = new Redis({
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + ADMIN_SECRET) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { key, expire, phone } = req.body || {};
+  const { key, expire, phone, features } = req.body || {};
   if (!key || !expire) return res.status(400).json({ error: 'Thieu key hoac expire' });
 
-  const keyData = { key, expire, phone: phone || '', created_at: new Date().toISOString() };
+  // features: array of enabled tools, e.g. ["veo3"], ["grok"], ["veo3","grok"]
+  // Default to ["veo3"] for backward compatibility
+  const enabledFeatures = Array.isArray(features) && features.length > 0
+    ? features
+    : ['veo3'];
+
+  const keyData = {
+    key,
+    expire,
+    phone: phone || '',
+    features: enabledFeatures,
+    created_at: new Date().toISOString(),
+  };
   await redis.set('license:' + key, JSON.stringify(keyData));
   return res.json({ success: true, key: keyData });
 };

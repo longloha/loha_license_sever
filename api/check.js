@@ -47,7 +47,18 @@ module.exports = async function handler(req, res) {
     }
 
     const daysLeft = Math.ceil((expire - now) / 86400000);
-    return res.json({ valid: true, message: 'OK', expire: keyData.expire, days_left: daysLeft, phone: keyData.phone || '' });
+
+    // Return features (default ["veo3"] for old keys without features field)
+    const features = Array.isArray(keyData.features) ? keyData.features : ['veo3'];
+
+    return res.json({
+      valid: true,
+      message: 'OK',
+      expire: keyData.expire,
+      days_left: daysLeft,
+      phone: keyData.phone || '',
+      features: features,
+    });
   } catch (error) {
     console.error('Error:', error);
     return res.status(500).json({ valid: false, message: 'Server error' });

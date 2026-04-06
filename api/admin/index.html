@@ -60,13 +60,39 @@ tr:hover { background: #f7fafc; }
     <h2>Tạo key</h2>
     <div class="row">
       <div class="field">
+        <label>Số lượng key</label>
+        <input type="number" id="key-count" value="1" min="1" max="50" style="width:80px">
+      </div>
+      <div class="field">
         <label>Số ngày hiệu lực</label>
-        <input type="number" id="days" value="30" style="width:100px">
+        <input type="number" id="days" value="30" style="width:80px">
       </div>
       <div class="field">
         <label>Số điện thoại (gắn vào key)</label>
         <input type="text" id="phone" placeholder="0901234567" style="width:200px">
       </div>
+      <div class="field">
+        <label>Loại user</label>
+        <select id="user-role" style="width:100px">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Ghi chú (optional)</label>
+        <input type="text" id="note" placeholder="" style="width:180px">
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="font-size:14px;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="feat-veo3" checked> Veo
+      </label>
+      <label style="font-size:14px;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="feat-grok"> Grok
+      </label>
+      <label style="font-size:14px;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="feat-sora"> Sora
+      </label>
       <button class="btn btn-success" onclick="createKey()">Tạo key</button>
     </div>
     <div id="create-result" class="result" style="display:none"></div>
@@ -90,6 +116,7 @@ tr:hover { background: #f7fafc; }
         <tr>
           <th>Key</th>
           <th>Phone</th>
+          <th>Features</th>
           <th>Hết hạn</th>
           <th>Status</th>
           <th>Device</th>
@@ -125,35 +152,48 @@ function login() {
 }
 
 function createKey() {
+  const count = parseInt(document.getElementById('key-count').value) || 1;
   const days = parseInt(document.getElementById('days').value) || 30;
   const phone = document.getElementById('phone').value.trim();
   if (!phone) { alert('Nhập số điện thoại!'); return; }
 
-  // Generate key: LOHA-{phone}-{random}
-  const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const key = 'LOHA-' + phone + '-' + rand;
+  // Collect features from checkboxes
+  const features = [];
+  if (document.getElementById('feat-veo3').checked) features.push('veo3');
+  if (document.getElementById('feat-grok').checked) features.push('grok');
+  if (document.getElementById('feat-sora').checked) features.push('sora');
+  if (features.length === 0) { alert('Chọn ít nhất 1 tính năng (Veo/Grok/Sora)!'); return; }
 
-  // Calculate expire date
   const expire = new Date();
   expire.setDate(expire.getDate() + days);
   const expireStr = expire.toISOString().split('T')[0];
 
-  fetch(API + '/admin/create', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + adminKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, expire: expireStr, phone })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      const el = document.getElementById('create-result');
-      el.style.display = 'block';
-      el.innerHTML = '<b>Key vừa tạo (copy gửi cho khách):</b>\n\nkey: <b>' + key + '</b>\nexpires: <b>' + expireStr + '</b>\nphone: ' + phone;
-      loadKeys();
-    } else {
-      alert('Lỗi: ' + JSON.stringify(data));
-    }
-  });
+  const results = [];
+  let done = 0;
+
+  for (let n = 0; n < count; n++) {
+    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const key = 'LOHA-' + phone + '-' + rand;
+
+    fetch(API + '/admin/create', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, expire: expireStr, phone, features })
+    })
+    .then(r => r.json())
+    .then(data => {
+      done++;
+      if (data.success) results.push(key);
+      if (done === count) {
+        const el = document.getElementById('create-result');
+        el.style.display = 'block';
+        el.innerHTML = '<b>' + results.length + ' key vừa tạo (copy gửi cho khách):</b>\n\n' +
+          results.map(k => 'key: <b>' + k + '</b>').join('\n') +
+          '\nexpires: <b>' + expireStr + '</b>\nfeatures: <b>' + features.join(', ') + '</b>\nphone: ' + phone;
+        loadKeys();
+      }
+    });
+  }
 }
 
 function loadKeys() {
@@ -189,10 +229,12 @@ function renderKeys(data) {
     const lastSeen = k.last_seen ? new Date(k.last_seen).toLocaleString('vi-VN') : '-';
     const expireStr = new Date(k.expire).toLocaleDateString('vi-VN');
     const keyShort = k.key.length > 20 ? k.key.substring(0, 8) + '...' + k.key.substring(k.key.length - 6) : k.key;
+    const feats = Array.isArray(k.features) ? k.features.join(', ') : 'veo3';
 
     tbody.innerHTML += '<tr>' +
       '<td title="' + k.key + '">' + keyShort + '</td>' +
       '<td>' + (k.phone || '-') + '</td>' +
+      '<td><b>' + feats + '</b></td>' +
       '<td>' + expireStr + '</td>' +
       '<td>' + status + '</td>' +
       '<td title="' + (k.device_id || '') + '">' + device + '</td>' +
